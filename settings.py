@@ -14,11 +14,12 @@ ROOT = ROOT.relative_to(Path.cwd())
 # Sources
 IMAGE = 'Image'
 VIDEO = 'Video'
+UPLOAD_VIDEO = 'Upload Video'
 WEBCAM = 'Webcam'
 RTSP = 'RTSP'
 YOUTUBE = 'YouTube'
 
-SOURCES_LIST = [IMAGE, VIDEO, WEBCAM, RTSP, YOUTUBE]
+SOURCES_LIST = [IMAGE, UPLOAD_VIDEO, VIDEO, WEBCAM, RTSP, YOUTUBE]
 
 # Images config
 IMAGES_DIR = ROOT / 'images'
@@ -36,8 +37,7 @@ VIDEOS_DICT = {
 # ML Model config
 MODEL_DIR = ROOT / 'weights'
 DETECTION_MODEL = MODEL_DIR / 'yolov8n.pt'
-# In case of your custome model comment out the line above and
-# Place your custom model pt file name at the line below 
+# Custom model (uncomment to use your model)
 # DETECTION_MODEL = MODEL_DIR / 'my_detection_model.pt'
 
 SEGMENTATION_MODEL = MODEL_DIR / 'yolov8n-seg.pt'

@@ -1,6 +1,9 @@
 # Python In-built packages
 from pathlib import Path
 import PIL
+import cv2
+import tempfile
+import numpy as np
 
 # External packages
 import streamlit as st
@@ -11,100 +14,94 @@ import helper
 
 # Setting page layout
 st.set_page_config(
-    page_title="Object Detection using YOLOv8",
-    page_icon="🤖",
+    page_title="Video Safety Detection using YOLOv8",
+    page_icon="🛡️",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
 # Main page heading
-st.title("Object Detection And Tracking using YOLOv8")
+st.title("🎥 Video Upload - Object Detection & Safety Score using YOLOv8")
 
 # Sidebar
-st.sidebar.header("ML Model Config")
+st.sidebar.header("⚙️ ML Model Config")
 
 # Model Options
-model_type = st.sidebar.radio(
-    "Select Task", ['Detection', 'Segmentation'])
-
-confidence = float(st.sidebar.slider(
-    "Select Model Confidence", 25, 100, 40)) / 100
+model_type = st.sidebar.radio("Select Task", ['Detection', 'Segmentation'])
+confidence = float(st.sidebar.slider("Select Model Confidence", 25, 100, 40)) / 100
 
 # Selecting Detection Or Segmentation
-if model_type == 'Detection':
-    model_path = Path(settings.DETECTION_MODEL)
-elif model_type == 'Segmentation':
-    model_path = Path(settings.SEGMENTATION_MODEL)
+model_path = Path(settings.DETECTION_MODEL if model_type == 'Detection' else settings.SEGMENTATION_MODEL)
 
-# Load Pre-trained ML Model
+# Load Pre-trained Model
 try:
     model = helper.load_model(model_path)
 except Exception as ex:
     st.error(f"Unable to load model. Check the specified path: {model_path}")
     st.error(ex)
 
-st.sidebar.header("Image/Video Config")
-source_radio = st.sidebar.radio(
-    "Select Source", settings.SOURCES_LIST)
+st.sidebar.header("📤 Upload Video")
+uploaded_video = st.sidebar.file_uploader("Choose a video file", type=("mp4", "avi", "mov", "mkv"))
 
-source_img = None
-# If image is selected
-if source_radio == settings.IMAGE:
-    source_img = st.sidebar.file_uploader(
-        "Choose an image...", type=("jpg", "jpeg", "png", 'bmp', 'webp'))
+if uploaded_video is not None:
+    # Save uploaded video temporarily
+    tfile = tempfile.NamedTemporaryFile(delete=False)
+    tfile.write(uploaded_video.read())
+    video_path = tfile.name
 
-    col1, col2 = st.columns(2)
+    st.video(video_path)
 
-    with col1:
-        try:
-            if source_img is None:
-                default_image_path = str(settings.DEFAULT_IMAGE)
-                default_image = PIL.Image.open(default_image_path)
-                st.image(default_image_path, caption="Default Image",
-                         use_column_width=True)
-            else:
-                uploaded_image = PIL.Image.open(source_img)
-                st.image(source_img, caption="Uploaded Image",
-                         use_column_width=True)
-        except Exception as ex:
-            st.error("Error occurred while opening the image.")
-            st.error(ex)
+    if st.sidebar.button("🔍 Detect Objects and Get Safety Score"):
+        cap = cv2.VideoCapture(video_path)
+        frame_count = 0
 
-    with col2:
-        if source_img is None:
-            default_detected_image_path = str(settings.DEFAULT_DETECT_IMAGE)
-            default_detected_image = PIL.Image.open(
-                default_detected_image_path)
-            st.image(default_detected_image_path, caption='Detected Image',
-                     use_column_width=True)
+        people_count = 0
+        vehicle_count = 0
+        streetlight_count = 0
+
+        while True:
+            ret, frame = cap.read()
+            if not ret or frame_count > 100:  # Limit to 100 frames to speed up
+                break
+
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            results = model.predict(frame_rgb, conf=confidence)
+            boxes = results[0].boxes
+            class_ids = boxes.cls.tolist()
+
+            # Count specific objects using class labels (COCO format assumed)
+            for cls_id in class_ids:
+                name = model.names[int(cls_id)]
+                if name in ["person"]:
+                    people_count += 1
+                elif name in ["car", "bus", "truck", "motorbike", "bicycle"]:
+                    vehicle_count += 1
+                elif name in ["streetlight", "traffic light"]:  # Depending on the model class list
+                    streetlight_count += 1
+
+            frame_count += 1
+
+        cap.release()
+
+        # Display object counts
+        st.subheader("📊 Object Counts Summary")
+        st.write(f"👤 People Detected: **{people_count}**")
+        st.write(f"🚗 Vehicles Detected: **{vehicle_count}**")
+        st.write(f"💡 Streetlights Detected: **{streetlight_count}**")
+
+        # Calculate Safety Score (Sample logic: you can customize)
+        safety_score = (streetlight_count * 2 + people_count - vehicle_count) / 10
+        safety_score = max(0, min(10, round(safety_score, 2)))  # Clamp between 0 and 10
+
+        st.success(f"🛡️ Estimated Safety Score: **{safety_score} / 10**")
+
+        # Optional interpretation
+        if safety_score >= 8:
+            st.markdown("✅ **Very Safe**")
+        elif safety_score >= 5:
+            st.markdown("⚠️ **Moderately Safe**")
         else:
-            if st.sidebar.button('Detect Objects'):
-                res = model.predict(uploaded_image,
-                                    conf=confidence
-                                    )
-                boxes = res[0].boxes
-                res_plotted = res[0].plot()[:, :, ::-1]
-                st.image(res_plotted, caption='Detected Image',
-                         use_column_width=True)
-                try:
-                    with st.expander("Detection Results"):
-                        for box in boxes:
-                            st.write(box.data)
-                except Exception as ex:
-                    # st.write(ex)
-                    st.write("No image is uploaded yet!")
-
-elif source_radio == settings.VIDEO:
-    helper.play_stored_video(confidence, model)
-
-elif source_radio == settings.WEBCAM:
-    helper.play_webcam(confidence, model)
-
-elif source_radio == settings.RTSP:
-    helper.play_rtsp_stream(confidence, model)
-
-elif source_radio == settings.YOUTUBE:
-    helper.play_youtube_video(confidence, model)
+            st.markdown("🚨 **Unsafe Area**")
 
 else:
-    st.error("Please select a valid source type!")
+    st.info("Please upload a video to start detection.")
